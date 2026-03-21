@@ -33,8 +33,9 @@ export default function Dashboard() {
   // --- CHECK AUTH STATUS ON MOUNT ---
   useEffect(() => {
     const checkAuth = () => {
-      const token = authService.getToken()
-      const user = authService.getUser()
+      const token = localStorage.getItem('eco_token')
+      const userStr = localStorage.getItem('eco_user')
+      const user = userStr ? JSON.parse(userStr) : null
       
       if (token && user) {
         setIsLoggedIn(true)
@@ -299,7 +300,8 @@ If it is a normal object or waste material, respond using EXACTLY these five sec
           </div>
           <button
             onClick={() => {
-              authService.logout()
+              localStorage.removeItem('eco_token')
+              localStorage.removeItem('eco_user')
               setIsLoggedIn(false)
               setCurrentUser(null)
               setScanCount(0)

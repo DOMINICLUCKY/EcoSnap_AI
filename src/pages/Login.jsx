@@ -1,49 +1,83 @@
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Mail, Lock, ArrowRight, AlertCircle } from 'lucide-react'
-import { authService } from '../services/authService'
+import { Mail, Lock, ArrowRight, AlertCircle, Loader } from 'lucide-react'
+import { useGoogleLogin } from '@react-oauth/google'
+import axios from 'axios'
 
 export default function Login() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const handleSubmit = async (e) => {
+  // ============================================
+  // EMAIL/PASSWORD LOGIN
+  // ============================================
+  const handleLogin = async (e) => {
     e.preventDefault()
     setError('')
     setIsLoading(true)
 
     try {
-      const response = await authService.login({ email, password })
-      
-      if (response.success) {
-        // Redirect to dashboard on successful login
+      const response = await axios.post('http://localhost:5000/api/auth/login', {
+        email,
+        password
+      })
+
+      if (response.data.success && response.data.token) {
+        // Save token to localStorage
+        localStorage.setItem('eco_token', response.data.token)
+        localStorage.setItem('eco_user', JSON.stringify(response.data.user))
+        
+        // Redirect to dashboard
         setTimeout(() => {
           navigate('/dashboard')
-        }, 500)
+        }, 300)
       }
     } catch (err) {
-      setError(err.message || 'Login failed. Please try again.')
+      const errorMessage = err.response?.data?.message || err.message || 'Login failed'
+      setError(errorMessage)
     } finally {
       setIsLoading(false)
     }
   }
 
-  const handleGoogleLogin = async () => {
+  // ============================================
+  // GOOGLE OAUTH LOGIN
+  // ============================================
+  const handleGoogleSuccess = async (credentialResponse) => {
     setError('')
-    setIsLoading(true)
+    setIsGoogleLoading(true)
+
     try {
-      // Note: In production, you'd integrate with Google Sign-In SDK here
-      console.log('Google login - requires @react-oauth/google integration')
-      setError('Google OAuth integration coming soon. Use email/password for now.')
+      const response = await axios.post('http://localhost:5000/api/auth/google', {
+        tokenId: credentialResponse.credential
+      })
+
+      if (response.data.success && response.data.token) {
+        // Save token to localStorage
+        localStorage.setItem('eco_token', response.data.token)
+        localStorage.setItem('eco_user', JSON.stringify(response.data.user))
+        
+        // Redirect to dashboard
+        setTimeout(() => {
+          navigate('/dashboard')
+        }, 300)
+      }
     } catch (err) {
-      setError('Google login failed')
+      const errorMessage = err.response?.data?.message || err.message || 'Google login failed'
+      setError(errorMessage)
     } finally {
-      setIsLoading(false)
+      setIsGoogleLoading(false)
     }
   }
+
+  const googleLogin = useGoogleLogin({
+    onSuccess: handleGoogleSuccess,
+    onError: () => setError('Google login failed. Please try again.')
+  })
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-6 relative overflow-hidden">
@@ -81,7 +115,7 @@ export default function Login() {
           )}
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4 mb-6">
+          <form onSubmit={handleLogin} className="space-y-4 mb-6">
             {/* Email Input */}
             <div className="relative">
               <Mail className="absolute left-4 top-3.5 w-5 h-5 text-slate-500" />
@@ -131,11 +165,19 @@ export default function Login() {
 
           {/* Google Button */}
           <button
-            onClick={handleGoogleLogin}
+            onClick={() => googleLogin()}
             type="button"
-            className="w-full bg-slate-900/50 hover:bg-slate-900/80 border border-slate-700/30 hover:border-emerald-500/30 text-white font-semibold py-3 rounded-lg transition-all duration-300"
+            disabled={isGoogleLoading}
+            className="w-full bg-slate-900/50 hover:bg-slate-900/80 disabled:opacity-50 disabled:cursor-not-allowed border border-slate-700/30 hover:border-emerald-500/30 text-white font-semibold py-3 rounded-lg transition-all duration-300 flex items-center justify-center gap-2"
           >
-            Continue with Google
+            {isGoogleLoading ? (
+              <>
+                <Loader className="w-5 h-5 animate-spin" />
+                Signing in...
+              </>
+            ) : (
+              'Continue with Google'
+            )}
           </button>
 
           {/* Footer Link */}

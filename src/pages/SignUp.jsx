@@ -1,7 +1,8 @@
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { User, Mail, Lock, ArrowRight, AlertCircle, CheckCircle } from 'lucide-react'
-import { authService } from '../services/authService'
+import { User, Mail, Lock, ArrowRight, AlertCircle, CheckCircle, Loader } from 'lucide-react'
+import { useGoogleLogin } from '@react-oauth/google'
+import axios from 'axios'
 
 export default function SignUp() {
   const navigate = useNavigate()
@@ -10,6 +11,7 @@ export default function SignUp() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false)
   const [passwordMatch, setPasswordMatch] = useState(true)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -19,7 +21,10 @@ export default function SignUp() {
     setPasswordMatch(password === value || value === '')
   }
 
-  const handleSubmit = async (e) => {
+  // ============================================
+  // EMAIL/PASSWORD SIGNUP
+  // ============================================
+  const handleSignUp = async (e) => {
     e.preventDefault()
     
     if (password !== confirmPassword) {
@@ -32,15 +37,19 @@ export default function SignUp() {
     setIsLoading(true)
 
     try {
-      const response = await authService.register({
+      const response = await axios.post('http://localhost:5000/api/auth/register', {
         name: fullName,
         email,
         password,
         confirmPassword
       })
 
-      if (response.success) {
+      if (response.data.success && response.data.token) {
         setSuccess('✅ Account created! Check your email to verify your account.')
+        
+        // Save token to localStorage
+        localStorage.setItem('eco_token', response.data.token)
+        localStorage.setItem('eco_user', JSON.stringify(response.data.user))
         
         // Redirect to dashboard after a short delay
         setTimeout(() => {
@@ -48,11 +57,50 @@ export default function SignUp() {
         }, 2000)
       }
     } catch (err) {
-      setError(err.message || 'Account creation failed. Please try again.')
+      const errorMessage = err.response?.data?.message || err.message || 'Account creation failed'
+      setError(errorMessage)
     } finally {
       setIsLoading(false)
     }
   }
+
+  // ============================================
+  // GOOGLE OAUTH SIGNUP
+  // ============================================
+  const handleGoogleSuccess = async (credentialResponse) => {
+    setError('')
+    setSuccess('')
+    setIsGoogleLoading(true)
+
+    try {
+      const response = await axios.post('http://localhost:5000/api/auth/google', {
+        tokenId: credentialResponse.credential
+      })
+
+      if (response.data.success && response.data.token) {
+        setSuccess('✅ Account created via Google! Redirecting to dashboard...')
+        
+        // Save token to localStorage
+        localStorage.setItem('eco_token', response.data.token)
+        localStorage.setItem('eco_user', JSON.stringify(response.data.user))
+        
+        // Redirect to dashboard
+        setTimeout(() => {
+          navigate('/dashboard')
+        }, 1500)
+      }
+    } catch (err) {
+      const errorMessage = err.response?.data?.message || err.message || 'Google signup failed'
+      setError(errorMessage)
+    } finally {
+      setIsGoogleLoading(false)
+    }
+  }
+
+  const googleLogin = useGoogleLogin({
+    onSuccess: handleGoogleSuccess,
+    onError: () => setError('Google signup failed. Please try again.')
+  })
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-6 relative overflow-hidden">
@@ -98,7 +146,7 @@ export default function SignUp() {
           )}
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4 mb-6">
+          <form onSubmit={handleSignUp} className="space-y-4 mb-6">
             {/* Full Name Input */}
             <div className="relative">
               <User className="absolute left-4 top-3.5 w-5 h-5 text-slate-500" />
@@ -166,6 +214,33 @@ export default function SignUp() {
               {!isLoading && <ArrowRight className="w-5 h-5" />}
             </button>
           </form>
+
+          {/* Divider */}
+          <div className="relative mb-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-slate-700/50"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-[#0d1410] text-slate-500">Or continue with</span>
+            </div>
+          </div>
+
+          {/* Google Button */}
+          <button
+            onClick={() => googleLogin()}
+            type="button"
+            disabled={isGoogleLoading}
+            className="w-full bg-slate-900/50 hover:bg-slate-900/80 disabled:opacity-50 disabled:cursor-not-allowed border border-slate-700/30 hover:border-emerald-500/30 text-white font-semibold py-3 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 mb-6"
+          >
+            {isGoogleLoading ? (
+              <>
+                <Loader className="w-5 h-5 animate-spin" />
+                Creating account...
+              </>
+            ) : (
+              'Create Account with Google'
+            )}
+          </button>
 
           {/* Footer Link */}
           <p className="text-center text-slate-400 text-sm">
