@@ -1,12 +1,12 @@
 import React, { useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
-import { BarChart3, TrendingUp, Users, Newspaper, User, Zap } from 'lucide-react'
+import { BarChart3, TrendingUp, Users, Newspaper, User } from 'lucide-react'
 
 export default function Layout() {
   const location = useLocation()
 
   const navItems = [
-    { name: 'Dashboard', path: '/', icon: BarChart3 },
+    { name: 'Dashboard', path: '/dashboard', icon: BarChart3 },
     { name: 'Heatmap', path: '/heatmap', icon: TrendingUp },
     { name: 'Leaderboard', path: '/leaderboard', icon: Users },
     { name: 'Eco News', path: '/news', icon: Newspaper },
@@ -20,11 +20,16 @@ export default function Layout() {
         {/* Logo */}
         <div className="px-6 py-8 border-b border-slate-700/50">
           <div className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg flex items-center justify-center">
-              <Zap className="w-6 h-6 text-white" />
-            </div>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-400">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              <path d="M12 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/>
+              <path d="M12 12v4"/>
+              <path d="M8 12h8"/>
+            </svg>
             <div>
-              <div className="text-white font-bold text-lg">EcoSnap</div>
+              <div className="text-lg font-black text-white tracking-wider">
+                Eco<span className="text-emerald-400">Snap</span>
+              </div>
               <div className="text-emerald-400 text-xs font-semibold">AI DETECTION</div>
             </div>
           </div>

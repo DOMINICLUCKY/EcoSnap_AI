@@ -1,4 +1,5 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import Landing from './pages/Landing'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Heatmap from './pages/Heatmap'
@@ -12,13 +13,16 @@ function App() {
   return (
     <Router>
       <Routes>
+        {/* LANDING PAGE - Public facing */}
+        <Route path="/" element={<Landing />} />
+        
         {/* TEST ROUTES - For debugging map issues */}
         <Route path="/map-test" element={<MapTest />} />
         <Route path="/map-alternative" element={<MapAlternative />} />
         
-        {/* MAIN APP ROUTES */}
+        {/* MAIN APP ROUTES - Protected by Layout */}
         <Route element={<Layout />}>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/heatmap" element={<Heatmap />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/news" element={<News />} />
