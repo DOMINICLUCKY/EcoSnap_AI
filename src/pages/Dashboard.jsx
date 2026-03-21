@@ -19,6 +19,8 @@ export default function Dashboard() {
   const [detections, setDetections] = useState([])
   const [fps, setFps] = useState(0)
   const [modelLoaded, setModelLoaded] = useState(false)
+  const [scanCount, setScanCount] = useState(0)
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
   
   const fpsCounterRef = useRef(0)
   const lastTimeRef = useRef(Date.now())
@@ -122,8 +124,14 @@ export default function Dashboard() {
     }
   }, [modelLoaded])
 
-  // --- 4. HANDLE CAMERA CAPTURE (BULLETPROOF OPTIMISTIC UI) ---
+  // --- 4. HANDLE CAMERA CAPTURE (DUAL-PATHWAY PROMPT) ---
   const handleCapture = useCallback(async () => {
+    // CHECK GUEST SCAN LIMIT (1 scan max for non-logged-in users)
+    if (scanCount >= 1 && !isLoggedIn) {
+      alert('Trial expired! Please create an account to continue scanning.')
+      return
+    }
+
     if (!webcamRef.current) return
     
     setIsScanning(true)
@@ -144,9 +152,9 @@ export default function Dashboard() {
         text: `📷 I just scanned ${detectedItem}. Can you analyze this for me?`
       }])
 
-      // 2. OPTIMISTIC UI UPDATE: Force the table to update INSTANTLY (Hackathon Magic)
+      // 2. OPTIMISTIC UI UPDATE
       const newScanRecord = {
-        _id: Date.now().toString(), // Fake ID until DB syncs
+        _id: Date.now().toString(),
         itemType: detectedItem,
         confidence: confidenceNum,
         carbonSaved: randomCarbon,
@@ -168,19 +176,22 @@ export default function Dashboard() {
       const base64Data = imageSrc.split(',')[1]
       const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' }, { apiVersion: 'v1' })
       
+      // THE NEW DUAL-PATHWAY PROMPT WITH STEP-BY-STEP INSTRUCTIONS
       const prompt = `Analyze this exact image. 
 If the image is predominantly of a person, human, face, or body part, respond ONLY with this exact text: 
 "⚠️ **TARGET IDENTIFIED:** Human.\n\nEcoSnap is designed for waste management and environmental sustainability. Please scan a recyclable item or piece of waste to continue!"
 
-If it is a normal object or waste material, respond using EXACTLY these four sections. Use the bold headers provided, but do not use markdown hash (#) symbols. Keep it engaging, scientific, and concise.
+If it is a normal object or waste material, respond using EXACTLY these five sections. Use the bold headers provided, but do not use markdown hash (#) symbols. Keep it engaging, scientific, and highly detailed.
 
-**🔍 TARGET IDENTIFIED:** Name the exact object and its core material (e.g., PET Plastic Bottle, Aluminum Can).
+**🔍 MATERIAL IDENTIFIED:** Name the exact object and its scientific core material (e.g., Polyethylene Terephthalate (PET), Corrugated Cardboard).
 
-**⚠️ ENVIRONMENTAL IMPACT:** Explain in 1-2 sentences what happens if this is thrown in a normal trash bin or ends up in the ocean.
+**⚠️ ECOLOGICAL FOOTPRINT:** Explain exactly how long this takes to decompose in nature and what toxins or microplastics it releases.
 
-**♻️ PROPER DISPOSAL:** Give exact instructions on how to properly recycle or dispose of this item.
+**♻️ PATHWAY A - INDUSTRIAL RECYCLING:** Provide a 3-step process on how the user should prep this item for industrial recycling. Include what new industrial products it can be transformed into.
 
-**💡 CREATIVE UPCYCLING:** Give one brilliant, highly creative DIY way to reuse this item at home.`
+**💡 PATHWAY B - AT-HOME UPCYCLING:** Provide a brief, step-by-step tutorial on how to build a creative DIY upcycled project with this item.
+
+**📊 ECO-METRIC:** Provide one quick, interesting statistical fact about recycling this specific material.`
       
       const result = await model.generateContent([
         prompt,
@@ -192,12 +203,18 @@ If it is a normal object or waste material, respond using EXACTLY these four sec
       // 5. UPDATE CHAT WITH REAL AI RESPONSE
       setChatMessages(prev => [...prev, { id: Date.now() + 1, type: 'bot', text: aiResponse }])
 
+      // 6. INCREMENT SCAN COUNT FOR GUEST USERS
+      setScanCount(prev => prev + 1)
+
+      // If it's a real scan, trigger DB refresh to sync the real Mongo ID
+      if (!aiResponse.includes("TARGET IDENTIFIED:** Human")) {
+         setTimeout(() => { fetchScans() }, 1500) 
+      }
+
     } catch (error) {
       console.error('🚨 SCAN ERROR:', error)
-      
-      // 6. IF AI CRASHES, SHOW THE FALLBACK TEXT BUT KEEP THE TABLE DATA
       const detectedItem = detections.length > 0 ? detections[0].class : 'item'
-      const fallbackUpcycleIdea = `**🔍 TARGET IDENTIFIED:** ${detectedItem}\n\n**⚠️ ENVIRONMENTAL IMPACT:** Improper disposal leads to landfill accumulation.\n\n**♻️ PROPER DISPOSAL:** Please sort into local recycling.\n\n**💡 CREATIVE UPCYCLING:** Repurpose this item or donate it.`
+      const fallbackUpcycleIdea = `**🔍 MATERIAL IDENTIFIED:** ${detectedItem}\n\n**⚠️ ECOLOGICAL FOOTPRINT:** Improper disposal leads to massive landfill accumulation.\n\n**♻️ PATHWAY A:** Please sort into local municipal recycling.\n\n**💡 PATHWAY B:** Repurpose this item for household storage.`
       
       setChatMessages(prev => [...prev, { id: Date.now() + 1, type: 'bot', text: fallbackUpcycleIdea }])
     } finally {
@@ -220,12 +237,12 @@ If it is a normal object or waste material, respond using EXACTLY these four sec
       if (!apiKey || apiKey === 'undefined') throw new Error("API Key missing.")
 
       const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' }, { apiVersion: 'v1' })
-      const prompt = `You are EcoSnap, an advanced Environmental Intelligence AI. The user says: "${currentInput}". Respond directly using these exact bold headers. Keep it scientific but easy to understand:
+      const prompt = `You are EcoSnap, an advanced Environmental Intelligence AI. The user says: "${currentInput}". Respond directly using these exact bold headers:
 
 **🔍 MATERIAL ANALYSIS:** Identify the core material.
-**⚠️ ENVIRONMENTAL RISK:** What happens if it's trashed improperly?
-**♻️ RECYCLING PROTOCOL:** How should they dispose of it?
-**💡 REUSE IDEAS:** A practical upcycle idea.`
+**⚠️ ECOLOGICAL FOOTPRINT:** What happens if it's trashed improperly?
+**♻️ PATHWAY A - RECYCLING:** Commercial recycling protocol.
+**💡 PATHWAY B - UPCYCLING:** A practical at-home reuse idea.`
       
       const result = await model.generateContent(prompt)
       let aiText = await result.response.text()
@@ -234,7 +251,6 @@ If it is a normal object or waste material, respond using EXACTLY these four sec
     } catch (error) {
        const fallbackResponse = "I'm having trouble reaching the AI brain right now. Please verify your connection or API key!"
        setChatMessages(prev => [...prev, { id: Date.now() + 1, type: 'bot', text: fallbackResponse }])
-      console.error('Chat error:', error)
     } finally {
       setIsTyping(false)
     }
@@ -346,7 +362,7 @@ If it is a normal object or waste material, respond using EXACTLY these four sec
         <div className="flex-1 bg-[#050a07] rounded-lg p-4 overflow-y-auto mb-4 space-y-4 border border-slate-800 custom-scrollbar">
           {chatMessages.map((msg) => (
             <div key={msg.id} className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[90%] px-4 py-3 rounded-2xl text-sm shadow-md whitespace-pre-wrap ${
+              <div className={`max-w-[90%] px-4 py-3 rounded-2xl text-sm shadow-md whitespace-pre-wrap leading-relaxed ${
                   msg.type === 'user' ? 'bg-slate-800 text-slate-200 rounded-br-sm border border-slate-700' : 'bg-[#0a1a12] text-emerald-300 rounded-bl-sm border border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.05)]'
                 }`}>
                 {msg.text}
