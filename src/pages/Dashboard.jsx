@@ -128,7 +128,7 @@ export default function Dashboard() {
   const handleCapture = useCallback(async () => {
     // CHECK GUEST SCAN LIMIT (1 scan max for non-logged-in users)
     if (scanCount >= 1 && !isLoggedIn) {
-      alert('Trial expired! Please create an account to continue scanning.')
+      alert('Free trial limit reached! Please create an account to unlock unlimited AI scans and the Leaderboard.')
       return
     }
 
@@ -176,20 +176,26 @@ export default function Dashboard() {
       const base64Data = imageSrc.split(',')[1]
       const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' }, { apiVersion: 'v1' })
       
-      // THE NEW DUAL-PATHWAY PROMPT WITH STEP-BY-STEP INSTRUCTIONS
+      // THE DUAL-PATHWAY PROMPT WITH NUMBERED LISTS
       const prompt = `Analyze this exact image. 
 If the image is predominantly of a person, human, face, or body part, respond ONLY with this exact text: 
 "⚠️ **TARGET IDENTIFIED:** Human.\n\nEcoSnap is designed for waste management and environmental sustainability. Please scan a recyclable item or piece of waste to continue!"
 
-If it is a normal object or waste material, respond using EXACTLY these five sections. Use the bold headers provided, but do not use markdown hash (#) symbols. Keep it engaging, scientific, and highly detailed.
+If it is a normal object or waste material, respond using EXACTLY these five sections with these EXACT bold headers and formatting. Do not use markdown hash (#) symbols. Keep it engaging, scientific, and highly detailed.
 
 **🔍 MATERIAL IDENTIFIED:** Name the exact object and its scientific core material (e.g., Polyethylene Terephthalate (PET), Corrugated Cardboard).
 
 **⚠️ ECOLOGICAL FOOTPRINT:** Explain exactly how long this takes to decompose in nature and what toxins or microplastics it releases.
 
-**♻️ PATHWAY A - INDUSTRIAL RECYCLING:** Provide a 3-step process on how the user should prep this item for industrial recycling. Include what new industrial products it can be transformed into.
+**♻️ PATHWAY A - INDUSTRIAL RECYCLING:**
+1. [First step on how to prep the item]
+2. [Second step on the recycling process]
+3. [Third step: What new industrial products it becomes]
 
-**💡 PATHWAY B - AT-HOME UPCYCLING:** Provide a brief, step-by-step tutorial on how to build a creative DIY upcycled project with this item.
+**💡 PATHWAY B - AT-HOME UPCYCLING:**
+1. [First step to prepare materials]
+2. [Second step: Building the creative project]
+3. [Third step: Final assembly or finishing touches]
 
 **📊 ECO-METRIC:** Provide one quick, interesting statistical fact about recycling this specific material.`
       
@@ -236,13 +242,18 @@ If it is a normal object or waste material, respond using EXACTLY these five sec
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY
       if (!apiKey || apiKey === 'undefined') throw new Error("API Key missing.")
 
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' }, { apiVersion: 'v1' })
-      const prompt = `You are EcoSnap, an advanced Environmental Intelligence AI. The user says: "${currentInput}". Respond directly using these exact bold headers:
+      // CONTEXT-AWARE: Include current detection in prompt
+      const currentDetection = detections.length > 0 ? detections[0].class : 'an object'
+      const contextNote = detections.length > 0 ? `The user is currently looking at: ${currentDetection}. ` : ''
 
-**🔍 MATERIAL ANALYSIS:** Identify the core material.
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' }, { apiVersion: 'v1' })
+      const prompt = `You are EcoSnap, an advanced Environmental Intelligence AI. ${contextNote}The user says: "${currentInput}". Respond directly using these exact bold headers:
+
+**🔍 MATERIAL ANALYSIS:** Identify the core material (if the user is looking at something specific, analyze that).
 **⚠️ ECOLOGICAL FOOTPRINT:** What happens if it's trashed improperly?
-**♻️ PATHWAY A - RECYCLING:** Commercial recycling protocol.
-**💡 PATHWAY B - UPCYCLING:** A practical at-home reuse idea.`
+**♻️ PATHWAY A - INDUSTRIAL RECYCLING:** Commercial recycling protocol with numbered steps.
+**💡 PATHWAY B - AT-HOME UPCYCLING:** A practical at-home reuse idea with numbered steps.
+**📊 ECO-METRIC:** One quick statistical fact about this material.`
       
       const result = await model.generateContent(prompt)
       let aiText = await result.response.text()
