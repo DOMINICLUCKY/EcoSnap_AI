@@ -1,187 +1,253 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import Webcam from 'react-webcam'
+import * as tf from '@tensorflow/tfjs'
+import * as cocoSsd from '@tensorflow-models/coco-ssd'
 import { Send, Zap, Camera } from 'lucide-react'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
 export default function Dashboard() {
   const webcamRef = useRef(null)
+  const canvasRef = useRef(null)
   const [chatMessages, setChatMessages] = useState([
-    { id: 1, type: 'bot', text: 'Hi! I\'m your AI Upcycle Assistant. Scan an item or ask me about creative reuse options!' }
+    { id: 1, type: 'bot', text: 'Hi! I\'m EcoSnap AI. Scan an item to see its environmental impact, proper disposal methods, and creative upcycling ideas!' }
   ])
   const [inputValue, setInputValue] = useState('')
   const [recentScans, setRecentScans] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [isScanning, setIsScanning] = useState(false)
   const [isTyping, setIsTyping] = useState(false)
+  const [detections, setDetections] = useState([])
+  const [fps, setFps] = useState(0)
+  const [modelLoaded, setModelLoaded] = useState(false)
+  
+  const fpsCounterRef = useRef(0)
+  const lastTimeRef = useRef(Date.now())
+  const modelRef = useRef(null)
 
-  // Fetch real scans from MongoDB backend
+  const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY)
+
+  // --- 1. LOAD AI MODEL ---
   useEffect(() => {
-    const fetchScans = async () => {
+    const loadModel = async () => {
       try {
-        const response = await fetch('http://localhost:5000/api/scans')
-        const data = await response.json()
-        if (data && Array.isArray(data)) {
-          setRecentScans(data)
-        } else if (data.success && Array.isArray(data.data)) {
-          setRecentScans(data.data)
-        }
+        console.log('Loading COCO-SSD model...')
+        const model = await cocoSsd.load()
+        modelRef.current = model
+        setModelLoaded(true)
+        console.log('COCO-SSD model loaded successfully!')
       } catch (error) {
-        console.error('Failed to fetch scans:', error)
-      } finally {
-        setIsLoading(false)
+        console.error('Error loading detection model:', error)
       }
     }
+    loadModel()
+  }, [])
+
+  // --- 2. FETCH SCANS FROM DB ---
+  const fetchScans = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/api/scans')
+      const data = await response.json()
+      
+      const scansArray = Array.isArray(data) ? data : (data.data || [])
+      setRecentScans([...scansArray].reverse()) // Show newest first
+    } catch (error) {
+      console.error('❌ Failed to fetch scans:', error)
+      setRecentScans([])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
     fetchScans()
   }, [])
 
-  // Handle webcam capture and Gemini integration
+  // --- 3. REAL-TIME OBJECT DETECTION LOOP ---
+  useEffect(() => {
+    if (!modelLoaded || !webcamRef.current || !canvasRef.current) return
+
+    let animationId
+    const detectObjects = async () => {
+      try {
+        const video = webcamRef.current.video
+        if (video && video.readyState === 4) {
+          const predictions = await modelRef.current.detect(video)
+          setDetections(predictions)
+
+          const canvas = canvasRef.current
+          const ctx = canvas.getContext('2d')
+          canvas.width = video.videoWidth
+          canvas.height = video.videoHeight
+
+          ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+          predictions.forEach(prediction => {
+            const [x, y, width, height] = prediction.bbox
+            const confidence = (prediction.score * 100).toFixed(0)
+
+            ctx.strokeStyle = '#10b981'
+            ctx.lineWidth = 3
+            ctx.strokeRect(x, y, width, height)
+
+            const label = `${prediction.class} ${confidence}%`
+            ctx.font = 'bold 14px Arial'
+            ctx.fillStyle = '#10b981'
+            const textMetrics = ctx.measureText(label)
+            const textWidth = textMetrics.width
+            ctx.fillRect(x, y - 25, textWidth + 10, 25)
+
+            ctx.fillStyle = '#050a07'
+            ctx.fillText(label, x + 5, y - 8)
+          })
+
+          fpsCounterRef.current++
+          const now = Date.now()
+          if (now - lastTimeRef.current >= 1000) {
+            setFps(fpsCounterRef.current)
+            fpsCounterRef.current = 0
+            lastTimeRef.current = now
+          }
+        }
+      } catch (error) {
+        console.error('Detection error:', error)
+      }
+
+      animationId = requestAnimationFrame(detectObjects)
+    }
+
+    detectObjects()
+
+    return () => {
+      if (animationId) cancelAnimationFrame(animationId)
+    }
+  }, [modelLoaded])
+
+  // --- 4. HANDLE CAMERA CAPTURE (BULLETPROOF OPTIMISTIC UI) ---
   const handleCapture = useCallback(async () => {
     if (!webcamRef.current) return
     
     setIsScanning(true)
+    setIsTyping(true)
     
     try {
-      // 1. Capture image from webcam
       const imageSrc = webcamRef.current.getScreenshot()
-      
-      if (!imageSrc) {
-        throw new Error('Failed to capture image from webcam')
-      }
+      if (!imageSrc) throw new Error('Camera failed to capture image.')
 
-      // 2. Show user message instantly
-      const userMessage = {
-        id: chatMessages.length + 1,
+      const detectedItem = detections.length > 0 ? detections[0].class : 'an item'
+      const confidenceNum = detections.length > 0 ? Math.round(detections[0].score * 100) : 85
+      const randomCarbon = parseFloat((Math.random() * 2 + 0.5).toFixed(2))
+
+      // 1. ADD USER MESSAGE TO CHAT
+      setChatMessages(prev => [...prev, {
+        id: Date.now(),
         type: 'user',
-        text: '📷 I just scanned an item. What are some creative upcycling ideas?'
-      }
-      setChatMessages(prev => [...prev, userMessage])
-      setIsTyping(true)
+        text: `📷 I just scanned ${detectedItem}. Can you analyze this for me?`
+      }])
 
-      // 3. API Key Check
+      // 2. OPTIMISTIC UI UPDATE: Force the table to update INSTANTLY (Hackathon Magic)
+      const newScanRecord = {
+        _id: Date.now().toString(), // Fake ID until DB syncs
+        itemType: detectedItem,
+        confidence: confidenceNum,
+        carbonSaved: randomCarbon,
+        location: 'EcoSnap Desktop'
+      }
+      setRecentScans(prev => [newScanRecord, ...prev])
+
+      // 3. TRY TO SAVE TO MONGODB IN BACKGROUND
+      fetch('http://localhost:5000/api/scans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newScanRecord)
+      }).catch(e => console.warn("Backend offline, but UI updated successfully."))
+
+      // 4. CALL GEMINI AI
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY
-      if (!apiKey) {
-        throw new Error('VITE_GEMINI_API_KEY is missing. Restart your Vite server!')
-      }
+      if (!apiKey || apiKey === 'undefined') throw new Error('API Key is missing!')
 
-      // 4. Dynamic MIME Type Extraction (The Fix!)
-      const mimeType = imageSrc.substring(imageSrc.indexOf(":") + 1, imageSrc.indexOf(";"))
-      const base64Image = imageSrc.split(',')[1]
+      const base64Data = imageSrc.split(',')[1]
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' }, { apiVersion: 'v1' })
+      
+      const prompt = `Analyze this exact image. 
+If the image is predominantly of a person, human, face, or body part, respond ONLY with this exact text: 
+"⚠️ **TARGET IDENTIFIED:** Human.\n\nEcoSnap is designed for waste management and environmental sustainability. Please scan a recyclable item or piece of waste to continue!"
 
-      // 5. Call Gemini API
-      const genAI = new GoogleGenerativeAI(apiKey)
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+If it is a normal object or waste material, respond using EXACTLY these four sections. Use the bold headers provided, but do not use markdown hash (#) symbols. Keep it engaging, scientific, and concise.
+
+**🔍 TARGET IDENTIFIED:** Name the exact object and its core material (e.g., PET Plastic Bottle, Aluminum Can).
+
+**⚠️ ENVIRONMENTAL IMPACT:** Explain in 1-2 sentences what happens if this is thrown in a normal trash bin or ends up in the ocean.
+
+**♻️ PROPER DISPOSAL:** Give exact instructions on how to properly recycle or dispose of this item.
+
+**💡 CREATIVE UPCYCLING:** Give one brilliant, highly creative DIY way to reuse this item at home.`
       
       const result = await model.generateContent([
-        {
-          inlineData: {
-            mimeType: mimeType,
-            data: base64Image
-          }
-        },
-        'I just scanned this item. First, identify what it is. Then, give me one highly unique, creative way to upcycle or reuse it in exactly 2 sentences. Be specific and imaginative.'
+        prompt,
+        { inlineData: { data: base64Data, mimeType: 'image/jpeg' } }
       ])
+      
+      const aiResponse = await result.response.text()
 
-      const aiResponse = result.response.text()
-
-      // 6. Add AI response to chat
-      setChatMessages(prev => [
-        ...prev,
-        {
-          id: prev.length + 1,
-          type: 'bot',
-          text: aiResponse
-        }
-      ])
-
-      // 7. Post record to backend (Isolated so it doesn't crash the AI if DB fails)
-      try {
-        await fetch('http://localhost:5000/api/scans', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            itemType: 'Scanned Item',
-            confidence: Math.floor(Math.random() * 20 + 80),
-            location: 'Local User',
-            username: 'EcoWarrior_07',
-            carbonSaved: Math.random() * 2 + 0.5
-          })
-        })
-
-        // Refresh scans list
-        const scansResponse = await fetch('http://localhost:5000/api/scans')
-        const scansData = await scansResponse.json()
-        if (scansData && Array.isArray(scansData)) {
-            setRecentScans(scansData)
-        } else if (scansData.success && Array.isArray(scansData.data)) {
-            setRecentScans(scansData.data)
-        }
-      } catch (dbError) {
-        console.warn("Backend save failed, but AI is fine.", dbError)
-      }
+      // 5. UPDATE CHAT WITH REAL AI RESPONSE
+      setChatMessages(prev => [...prev, { id: Date.now() + 1, type: 'bot', text: aiResponse }])
 
     } catch (error) {
-      console.error('🔍 EXACT ERROR:', error)
-      setChatMessages(prev => [
-        ...prev,
-        {
-          id: prev.length + 1,
-          type: 'bot',
-          text: `Error: ${error.message}`
-        }
-      ])
+      console.error('🚨 SCAN ERROR:', error)
+      
+      // 6. IF AI CRASHES, SHOW THE FALLBACK TEXT BUT KEEP THE TABLE DATA
+      const detectedItem = detections.length > 0 ? detections[0].class : 'item'
+      const fallbackUpcycleIdea = `**🔍 TARGET IDENTIFIED:** ${detectedItem}\n\n**⚠️ ENVIRONMENTAL IMPACT:** Improper disposal leads to landfill accumulation.\n\n**♻️ PROPER DISPOSAL:** Please sort into local recycling.\n\n**💡 CREATIVE UPCYCLING:** Repurpose this item or donate it.`
+      
+      setChatMessages(prev => [...prev, { id: Date.now() + 1, type: 'bot', text: fallbackUpcycleIdea }])
     } finally {
       setIsScanning(false)
       setIsTyping(false)
     }
-  }, [chatMessages.length])
+  }, [detections, genAI])
 
+  // --- 5. HANDLE STANDARD TEXT CHAT ---
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return
 
-    const newUserMessage = {
-      id: chatMessages.length + 1,
-      type: 'user',
-      text: inputValue
-    }
-    setChatMessages(prev => [...prev, newUserMessage])
+    const currentInput = inputValue
+    setChatMessages(prev => [...prev, { id: Date.now(), type: 'user', text: currentInput }])
     setInputValue('')
     setIsTyping(true)
 
     try {
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY
-      const genAI = new GoogleGenerativeAI(apiKey)
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+      if (!apiKey || apiKey === 'undefined') throw new Error("API Key missing.")
+
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' }, { apiVersion: 'v1' })
+      const prompt = `You are EcoSnap, an advanced Environmental Intelligence AI. The user says: "${currentInput}". Respond directly using these exact bold headers. Keep it scientific but easy to understand:
+
+**🔍 MATERIAL ANALYSIS:** Identify the core material.
+**⚠️ ENVIRONMENTAL RISK:** What happens if it's trashed improperly?
+**♻️ RECYCLING PROTOCOL:** How should they dispose of it?
+**💡 REUSE IDEAS:** A practical upcycle idea.`
       
-      const result = await model.generateContent(
-        `You are EcoSnap AI, an expert in sustainability. The user says: "${inputValue}". Give a helpful, creative 2-sentence response about recycling or upcycling.`
-      )
+      const result = await model.generateContent(prompt)
+      let aiText = await result.response.text()
       
-      setChatMessages(prev => [
-        ...prev,
-        {
-          id: prev.length + 1,
-          type: 'bot',
-          text: result.response.text()
-        }
-      ])
+      setChatMessages(prev => [...prev, { id: Date.now() + 1, type: 'bot', text: aiText }])
     } catch (error) {
-       setChatMessages(prev => [
-        ...prev,
-        { id: prev.length + 1, type: 'bot', text: 'I am having trouble connecting to my AI brain right now!' }
-      ])
+       const fallbackResponse = "I'm having trouble reaching the AI brain right now. Please verify your connection or API key!"
+       setChatMessages(prev => [...prev, { id: Date.now() + 1, type: 'bot', text: fallbackResponse }])
+      console.error('Chat error:', error)
     } finally {
       setIsTyping(false)
     }
   }
 
   return (
-    <div className="max-w-[1600px] mx-auto grid grid-cols-12 gap-6">
+    <div className="max-w-[1600px] mx-auto grid grid-cols-12 gap-6 pb-10">
       {/* Top Row - Three KPI Cards */}
       <div className="col-span-12 md:col-span-4 card bg-[#0d1410] border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.05)]">
         <div className="flex items-start justify-between">
           <div>
             <p className="text-slate-400 text-sm font-medium mb-2">Items Detected</p>
-            <h2 className="text-4xl font-bold text-white">2,847</h2>
+            <h2 className="text-4xl font-bold text-white">{recentScans.length > 0 ? 2847 + recentScans.length : 2847}</h2>
             <p className="text-emerald-400 text-xs mt-2 font-medium">↑ 12% this month</p>
           </div>
           <div className="w-12 h-12 bg-emerald-500/20 rounded-lg flex items-center justify-center border border-emerald-500/30">
@@ -218,9 +284,20 @@ export default function Dashboard() {
 
       {/* Middle Left - Live Scanner */}
       <div className="col-span-12 lg:col-span-8 card bg-[#0d1410] border-emerald-500/20 flex flex-col h-[500px]">
-        <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-           <Camera className="w-5 h-5 text-emerald-400" /> Live Scanner
-        </h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <Camera className="w-5 h-5 text-emerald-400" /> Live AI Detection Scanner
+          </h3>
+          <div className="flex items-center gap-2">
+            <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+              detections.length > 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700/20 text-slate-400'
+            }`}>
+              {detections.length > 0 ? '🎯 Target Acquired' : '🔍 Scanning...'}
+            </span>
+            <span className="text-emerald-400 text-sm font-mono">{fps} FPS</span>
+          </div>
+        </div>
+
         <div className="flex-1 bg-black rounded-lg overflow-hidden border border-emerald-500/30 flex items-center justify-center relative shadow-[0_0_20px_rgba(16,185,129,0.1)]">
           <Webcam
             ref={webcamRef}
@@ -228,19 +305,35 @@ export default function Dashboard() {
             className="w-full h-full object-cover"
             videoConstraints={{ facingMode: 'environment' }}
           />
+          <canvas ref={canvasRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
+
+          {detections.length > 0 && (
+            <div className="absolute top-4 left-4 bg-emerald-500/90 text-white px-4 py-2 rounded-lg font-mono text-sm z-20">
+              Objects: {detections.length}
+            </div>
+          )}
+
+          {detections.length > 0 && (
+            <div className="absolute top-4 right-4 bg-emerald-500/90 text-white px-4 py-2 rounded-lg z-20">
+              <p className="font-bold text-lg capitalize">{detections[0].class}</p>
+              <p className="text-xs font-mono">{(detections[0].score * 100).toFixed(0)}% Confidence</p>
+            </div>
+          )}
+
           {isScanning && (
-            <div className="absolute inset-0 bg-emerald-500/10 flex items-center justify-center backdrop-blur-sm">
+            <div className="absolute inset-0 bg-emerald-500/10 flex items-center justify-center backdrop-blur-sm rounded-lg z-30">
                <div className="w-16 h-16 border-4 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
             </div>
           )}
         </div>
+
         <button
           onClick={handleCapture}
-          disabled={isScanning || isTyping}
+          disabled={isScanning || isTyping || !modelLoaded}
           className="btn-primary mt-4 w-full flex items-center justify-center gap-2 py-3 disabled:opacity-50 disabled:cursor-not-allowed text-lg font-semibold shadow-[0_0_15px_rgba(16,185,129,0.4)]"
         >
           <Camera className="w-5 h-5" />
-          {isScanning ? 'Analyzing Object...' : 'Scan Object'}
+          {!modelLoaded ? 'Loading AI Model...' : isScanning ? 'Analyzing Object...' : 'Capture & Analyze'}
         </button>
       </div>
 
@@ -250,17 +343,12 @@ export default function Dashboard() {
            <Zap className="w-5 h-5 text-emerald-400" /> AI Upcycle Assistant
         </h3>
         
-        {/* Chat History */}
-        <div className="flex-1 bg-[#050a07] rounded-lg p-4 overflow-y-auto mb-4 space-y-4 border border-slate-800">
+        <div className="flex-1 bg-[#050a07] rounded-lg p-4 overflow-y-auto mb-4 space-y-4 border border-slate-800 custom-scrollbar">
           {chatMessages.map((msg) => (
             <div key={msg.id} className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div
-                className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm shadow-md ${
-                  msg.type === 'user'
-                    ? 'bg-slate-800 text-slate-200 rounded-br-sm border border-slate-700'
-                    : 'bg-[#0a1a12] text-emerald-300 rounded-bl-sm border border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.05)]'
-                }`}
-              >
+              <div className={`max-w-[90%] px-4 py-3 rounded-2xl text-sm shadow-md whitespace-pre-wrap ${
+                  msg.type === 'user' ? 'bg-slate-800 text-slate-200 rounded-br-sm border border-slate-700' : 'bg-[#0a1a12] text-emerald-300 rounded-bl-sm border border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.05)]'
+                }`}>
                 {msg.text}
               </div>
             </div>
@@ -276,21 +364,16 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Input Bar */}
         <div className="flex gap-2">
           <input
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-            placeholder="Ask about upcycling..."
-            className="flex-1 bg-[#050a07] border border-slate-700 rounded-lg px-4 py-3 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
+            placeholder="Ask about materials..."
+            className="flex-1 bg-[#050a07] border border-slate-700 rounded-lg px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
           />
-          <button
-            onClick={handleSendMessage}
-            disabled={isTyping}
-            className="btn-primary p-3 flex items-center justify-center rounded-lg disabled:opacity-50"
-          >
+          <button onClick={handleSendMessage} disabled={isTyping} className="btn-primary p-3 rounded-lg disabled:opacity-50">
             <Send className="w-5 h-5" />
           </button>
         </div>
@@ -298,7 +381,12 @@ export default function Dashboard() {
 
       {/* Bottom Row - Recent Scans Monitor */}
       <div className="col-span-12 card bg-[#0d1410] border-emerald-500/20 shadow-[0_0_20px_rgba(16,185,129,0.05)]">
-        <h3 className="text-lg font-bold text-white mb-6">Recent Scans Monitor</h3>
+        <div className="flex justify-between items-center mb-6">
+           <h3 className="text-lg font-bold text-white">Recent Scans Monitor</h3>
+           <button onClick={fetchScans} className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1 rounded transition-colors border border-slate-700">
+             Refresh Database
+           </button>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -306,7 +394,7 @@ export default function Dashboard() {
                 <th className="text-left text-slate-400 font-semibold py-3 px-3">ID</th>
                 <th className="text-left text-slate-400 font-semibold py-3 px-3">Item Type</th>
                 <th className="text-left text-slate-400 font-semibold py-3 px-3">Confidence</th>
-                <th className="text-left text-slate-400 font-semibold py-3 px-3">Location</th>
+                <th className="text-left text-slate-400 font-semibold py-3 px-3">Carbon Saved</th>
                 <th className="text-left text-slate-400 font-semibold py-3 px-3">Action</th>
               </tr>
             </thead>
@@ -317,21 +405,23 @@ export default function Dashboard() {
                 </tr>
               ) : recentScans.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="text-center py-8 text-slate-500">No scans detected in the database yet. Be the first!</td>
+                  <td colSpan="5" className="text-center py-8 text-slate-500">No scans detected in the database yet. Scan a recyclable object!</td>
                 </tr>
               ) : (
-                recentScans.slice(0, 5).map((scan) => (
-                  <tr key={scan._id} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
-                    <td className="text-slate-500 py-4 px-3 font-mono text-xs">#{scan._id?.slice(-4) || '0000'}</td>
-                    <td className="text-slate-200 py-4 px-3 font-medium">{scan.itemType}</td>
+                recentScans.slice(0, 8).map((scan, index) => (
+                  <tr key={scan._id || index} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
+                    <td className="text-slate-500 py-4 px-3 font-mono text-xs">#{scan._id?.slice(-5).toUpperCase() || 'SCAN'+index}</td>
+                    <td className="text-slate-200 py-4 px-3 font-medium capitalize">{scan.itemType || 'Unknown'}</td>
                     <td className="py-4 px-3">
                       <span className="text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-1 rounded">
-                        {scan.confidence}%
+                        {scan.confidence || 0}%
                       </span>
                     </td>
-                    <td className="text-slate-400 py-4 px-3">{scan.location}</td>
+                    <td className="text-emerald-500 py-4 px-3 font-medium">
+                       {scan.carbonSaved ? Number(scan.carbonSaved).toFixed(2) : '0.00'} kg
+                    </td>
                     <td className="py-4 px-3">
-                      <button className="btn-primary text-xs px-3 py-1.5 opacity-80 hover:opacity-100">Upcycle</button>
+                      <button className="text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/10 text-xs px-3 py-1.5 rounded transition-colors">Data Log</button>
                     </td>
                   </tr>
                 ))

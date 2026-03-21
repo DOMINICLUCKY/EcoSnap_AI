@@ -37,8 +37,7 @@ const ScanSchema = new mongoose.Schema({
   itemType: {
     type: String,
     required: true,
-    enum: ['Plastic Bottle', 'Glass Jar', 'Aluminum Can', 'Plastic Bag', 'Metal Cans', 'Organic Waste', 'Paper', 'Other'],
-    default: 'Other'
+    default: 'Unknown'
   },
   confidence: {
     type: Number,
@@ -67,6 +66,10 @@ const ScanSchema = new mongoose.Schema({
     default: null
   },
   imageUrl: {
+    type: String,
+    default: null
+  },
+  upcycleIdea: {
     type: String,
     default: null
   },
@@ -130,17 +133,11 @@ app.get('/api/scans', async (req, res) => {
       .limit(10)
       .lean();
     
-    res.status(200).json({
-      success: true,
-      count: scans.length,
-      data: scans
-    });
+    // Return as plain array for simpler frontend integration
+    res.status(200).json(scans);
   } catch (error) {
     console.error('❌ Error fetching scans:', error.message);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    res.status(200).json([]);
   }
 });
 
@@ -306,6 +303,181 @@ app.get('/api/stats', async (req, res) => {
 });
 
 /**
+ * GET /api/scans/user/:username
+ * Fetch all scans for a specific user
+ */
+app.get('/api/scans/user/:username', async (req, res) => {
+  try {
+    const { username } = req.params;
+
+    const userScans = await Scan.find({ username })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.status(200).json(userScans);
+  } catch (error) {
+    console.error('❌ Error fetching user scans:', error.message);
+    res.status(200).json([]);
+  }
+});
+
+/**
+ * GET /api/heatmap
+ * Fetch scan locations for heatmap visualization
+ */
+app.get('/api/heatmap', async (req, res) => {
+  try {
+    const heatmapData = await Scan.find(
+      { latitude: { $ne: null }, longitude: { $ne: null } }
+    )
+      .select('latitude longitude itemType confidence createdAt')
+      .lean();
+
+    res.status(200).json(heatmapData);
+  } catch (error) {
+    console.error('❌ Error fetching heatmap data:', error.message);
+    res.status(200).json([]);
+  }
+});
+
+/**
+ * GET /api/stats/user/:username
+ * Fetch detailed stats for a specific user
+ */
+app.get('/api/stats/user/:username', async (req, res) => {
+  try {
+    const { username } = req.params;
+
+    const user = await User.findOne({ username }).lean();
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    const userScans = await Scan.find({ username }).lean();
+    const itemCounts = {};
+    
+    userScans.forEach(scan => {
+      itemCounts[scan.itemType] = (itemCounts[scan.itemType] || 0) + 1;
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        ...user,
+        totalScans: userScans.length,
+        itemBreakdown: itemCounts,
+        averageConfidence: userScans.length > 0 
+          ? (userScans.reduce((sum, s) => sum + s.confidence, 0) / userScans.length).toFixed(2)
+          : 0
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error fetching user stats:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/scans/:id/upcycle
+ * Save upcycle idea for a scan
+ */
+app.post('/api/scans/:id/upcycle', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { upcycleIdea } = req.body;
+
+    const updatedScan = await Scan.findByIdAndUpdate(
+      id,
+      { upcycleIdea },
+      { new: true }
+    );
+
+    if (!updatedScan) {
+      return res.status(404).json({
+        success: false,
+        error: 'Scan not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Upcycle idea saved',
+      data: updatedScan
+    });
+  } catch (error) {
+    console.error('❌ Error saving upcycle idea:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/analytics/daily
+ * Fetch daily scan statistics
+ */
+app.get('/api/analytics/daily', async (req, res) => {
+  try {
+    const dailyStats = await Scan.aggregate([
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: '%Y-%m-%d', date: '$createdAt' }
+          },
+          count: { $sum: 1 },
+          carbonSaved: { $sum: '$carbonSaved' }
+        }
+      },
+      { $sort: { _id: -1 } },
+      { $limit: 30 }
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: dailyStats
+    });
+  } catch (error) {
+    console.error('❌ Error fetching daily analytics:', error.message);
+    res.status(200).json({ success: true, data: [] });
+  }
+});
+
+/**
+ * GET /api/top-items
+ * Fetch most commonly detected items
+ */
+app.get('/api/top-items', async (req, res) => {
+  try {
+    const topItems = await Scan.aggregate([
+      {
+        $group: {
+          _id: '$itemType',
+          count: { $sum: 1 },
+          avgConfidence: { $avg: '$confidence' }
+        }
+      },
+      { $sort: { count: -1 } },
+      { $limit: 10 }
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: topItems
+    });
+  } catch (error) {
+    console.error('❌ Error fetching top items:', error.message);
+    res.status(200).json({ success: true, data: [] });
+  }
+});
+
+/**
  * DELETE /api/scans/:id
  * Delete a scan by ID (admin/user feature)
  */
@@ -367,12 +539,18 @@ app.listen(PORT, () => {
   console.log(`📍 Health check: http://localhost:${PORT}/health`);
   console.log(`📊 API Base: http://localhost:${PORT}/api`);
   console.log(`\n🔗 Available Endpoints:`);
-  console.log(`   GET  /api/scans`);
-  console.log(`   POST /api/scans`);
-  console.log(`   GET  /api/leaderboard`);
-  console.log(`   GET  /api/users/:username`);
-  console.log(`   GET  /api/stats`);
+  console.log(`   GET    /api/scans`);
+  console.log(`   POST   /api/scans`);
+  console.log(`   GET    /api/scans/user/:username          (User scan history)`);
+  console.log(`   POST   /api/scans/:id/upcycle             (Save upcycle idea)`);
   console.log(`   DELETE /api/scans/:id`);
+  console.log(`   GET    /api/leaderboard                   (Global rankings)`);
+  console.log(`   GET    /api/users/:username               (User profile)`);
+  console.log(`   GET    /api/stats                         (Global stats)`);
+  console.log(`   GET    /api/stats/user/:username          (User detailed stats)`);
+  console.log(`   GET    /api/heatmap                       (Location-based scans)`);
+  console.log(`   GET    /api/analytics/daily               (Daily statistics)`);
+  console.log(`   GET    /api/top-items                     (Most detected items)`);
 });
 
 // ============================================
