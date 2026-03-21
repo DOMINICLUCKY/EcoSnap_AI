@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-base: #050a07;
+  --bg-card: #0d1410;
+  --accent: #10b981;
+  --border: rgba(16, 185, 129, 0.15);
+}
+
+body {
+  background-color: var(--bg-base);
+  color: #f1f5f9;
+  font-family: system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer components {
+  .card {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+  }
+
+  .sidebar-link {
+    @apply flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:text-slate-100 hover:bg-slate-700/50 transition-all font-medium cursor-pointer;
+  }
+
+  .sidebar-active {
+    background-color: var(--accent);
+    color: white;
+    box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
+  }
+
+  .btn-primary {
+    background-color: var(--accent);
+    @apply hover:bg-emerald-600 text-white px-5 py-2.5 rounded-lg font-medium transition-all shadow-lg hover:shadow-[0_0_15px_rgba(16,185,129,0.4)] cursor-pointer text-sm;
+  }
+
+  .pulse-dot {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+}
