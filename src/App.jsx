@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
 import SignUp from './pages/SignUp'
+import VerifyEmail from './pages/VerifyEmail'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Heatmap from './pages/Heatmap'
@@ -19,6 +20,7 @@ function App() {
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<SignUp />} />
+        <Route path="/verify-email/:token" element={<VerifyEmail />} />
         
         {/* TEST ROUTES - For debugging map issues */}
         <Route path="/map-test" element={<MapTest />} />

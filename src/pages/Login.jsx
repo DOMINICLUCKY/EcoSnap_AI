@@ -1,26 +1,48 @@
 import React, { useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Mail, Lock, ArrowRight } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Mail, Lock, ArrowRight, AlertCircle } from 'lucide-react'
+import { authService } from '../services/authService'
 
 export default function Login() {
+  const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
+    setError('')
     setIsLoading(true)
-    // Simulate login
-    setTimeout(() => {
+
+    try {
+      const response = await authService.login({ email, password })
+      
+      if (response.success) {
+        // Redirect to dashboard on successful login
+        setTimeout(() => {
+          navigate('/dashboard')
+        }, 500)
+      }
+    } catch (err) {
+      setError(err.message || 'Login failed. Please try again.')
+    } finally {
       setIsLoading(false)
-      // In a real app, this would authenticate and redirect
-      console.log('Login attempt:', { email, password })
-    }, 1500)
+    }
   }
 
-  const handleGoogleLogin = () => {
-    console.log('Google login clicked')
-    // In a real app, this would trigger Google OAuth
+  const handleGoogleLogin = async () => {
+    setError('')
+    setIsLoading(true)
+    try {
+      // Note: In production, you'd integrate with Google Sign-In SDK here
+      console.log('Google login - requires @react-oauth/google integration')
+      setError('Google OAuth integration coming soon. Use email/password for now.')
+    } catch (err) {
+      setError('Google login failed')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -49,6 +71,14 @@ export default function Login() {
             <h1 className="text-3xl font-black text-white mb-2">Welcome Back</h1>
             <p className="text-slate-400 text-sm">Sign in to your EcoSnap account</p>
           </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="mb-6 p-4 bg-red-900/30 border border-red-500/50 rounded-lg flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+              <p className="text-red-200 text-sm">{error}</p>
+            </div>
+          )}
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4 mb-6">

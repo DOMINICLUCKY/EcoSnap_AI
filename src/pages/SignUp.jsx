@@ -1,33 +1,57 @@
 import React, { useState } from 'react'
-import { Link } from 'react-router-dom'
-import { User, Mail, Lock, ArrowRight } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { User, Mail, Lock, ArrowRight, AlertCircle, CheckCircle } from 'lucide-react'
+import { authService } from '../services/authService'
 
 export default function SignUp() {
+  const navigate = useNavigate()
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [passwordMatch, setPasswordMatch] = useState(true)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
 
   const handlePasswordConfirmChange = (value) => {
     setConfirmPassword(value)
     setPasswordMatch(password === value || value === '')
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
+    
     if (password !== confirmPassword) {
       setPasswordMatch(false)
       return
     }
+
+    setError('')
+    setSuccess('')
     setIsLoading(true)
-    // Simulate account creation
-    setTimeout(() => {
+
+    try {
+      const response = await authService.register({
+        name: fullName,
+        email,
+        password,
+        confirmPassword
+      })
+
+      if (response.success) {
+        setSuccess('✅ Account created! Check your email to verify your account.')
+        
+        // Redirect to dashboard after a short delay
+        setTimeout(() => {
+          navigate('/dashboard')
+        }, 2000)
+      }
+    } catch (err) {
+      setError(err.message || 'Account creation failed. Please try again.')
+    } finally {
       setIsLoading(false)
-      // In a real app, this would create the account and redirect
-      console.log('Signup attempt:', { fullName, email, password })
-    }, 1500)
+    }
   }
 
   return (
@@ -56,6 +80,22 @@ export default function SignUp() {
             <h1 className="text-3xl font-black text-white mb-2">Join the Movement</h1>
             <p className="text-slate-400 text-sm">Create your free EcoSnap account today</p>
           </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="mb-6 p-4 bg-red-900/30 border border-red-500/50 rounded-lg flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+              <p className="text-red-200 text-sm">{error}</p>
+            </div>
+          )}
+
+          {/* Success Message */}
+          {success && (
+            <div className="mb-6 p-4 bg-emerald-900/30 border border-emerald-500/50 rounded-lg flex items-start gap-3">
+              <CheckCircle className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+              <p className="text-emerald-200 text-sm">{success}</p>
+            </div>
+          )}
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4 mb-6">

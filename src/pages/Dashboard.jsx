@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import Webcam from 'react-webcam'
 import * as tf from '@tensorflow/tfjs'
 import * as cocoSsd from '@tensorflow-models/coco-ssd'
-import { Send, Zap, Camera } from 'lucide-react'
+import { Send, Zap, Camera, LogOut } from 'lucide-react'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { authService } from '../services/authService'
 
 export default function Dashboard() {
   const webcamRef = useRef(null)
@@ -21,12 +22,31 @@ export default function Dashboard() {
   const [modelLoaded, setModelLoaded] = useState(false)
   const [scanCount, setScanCount] = useState(0)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [currentUser, setCurrentUser] = useState(null)
   
   const fpsCounterRef = useRef(0)
   const lastTimeRef = useRef(Date.now())
   const modelRef = useRef(null)
 
   const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY)
+
+  // --- CHECK AUTH STATUS ON MOUNT ---
+  useEffect(() => {
+    const checkAuth = () => {
+      const token = authService.getToken()
+      const user = authService.getUser()
+      
+      if (token && user) {
+        setIsLoggedIn(true)
+        setCurrentUser(user)
+      } else {
+        setIsLoggedIn(false)
+        setCurrentUser(null)
+      }
+    }
+    
+    checkAuth()
+  }, [])
 
   // --- 1. LOAD AI MODEL ---
   useEffect(() => {
@@ -268,49 +288,85 @@ If it is a normal object or waste material, respond using EXACTLY these five sec
   }
 
   return (
-    <div className="max-w-[1600px] mx-auto grid grid-cols-12 gap-6 pb-10">
-      {/* Top Row - Three KPI Cards */}
-      <div className="col-span-12 md:col-span-4 card bg-[#0d1410] border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.05)]">
-        <div className="flex items-start justify-between">
+    <div className="max-w-[1600px] mx-auto pb-10">
+      {/* User Info & Logout Section */}
+      {isLoggedIn && (
+        <div className="mb-6 p-4 bg-[#0d1410] border border-emerald-500/20 rounded-lg flex items-center justify-between">
           <div>
-            <p className="text-slate-400 text-sm font-medium mb-2">Items Detected</p>
-            <h2 className="text-4xl font-bold text-white">{recentScans.length > 0 ? 2847 + recentScans.length : 2847}</h2>
-            <p className="text-emerald-400 text-xs mt-2 font-medium">↑ 12% this month</p>
+            <p className="text-slate-400 text-sm">Logged in as</p>
+            <p className="text-white font-semibold">{currentUser?.name || 'User'}</p>
+            <p className="text-emerald-400 text-xs">{currentUser?.email}</p>
           </div>
-          <div className="w-12 h-12 bg-emerald-500/20 rounded-lg flex items-center justify-center border border-emerald-500/30">
-            <Zap className="w-6 h-6 text-emerald-400" />
+          <button
+            onClick={() => {
+              authService.logout()
+              setIsLoggedIn(false)
+              setCurrentUser(null)
+              setScanCount(0)
+              window.location.href = '/login'
+            }}
+            className="flex items-center gap-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/50 text-red-400 px-4 py-2 rounded-lg transition-all"
+          >
+            <LogOut className="w-4 h-4" />
+            Logout
+          </button>
+        </div>
+      )}
+
+      {!isLoggedIn && scanCount >= 1 && (
+        <div className="mb-6 p-4 bg-amber-900/30 border border-amber-500/50 rounded-lg">
+          <p className="text-amber-200 text-sm">
+            <strong>⚡ Free Trial Limit Reached:</strong> You've used your free scan. <a href="/signup" className="text-amber-300 hover:text-amber-200 font-semibold">Create an account</a> to unlock unlimited scans, personalized stats, and the Leaderboard!
+          </p>
+        </div>
+      )}
+
+      {/* KPI Grid */}
+      <div className="grid grid-cols-12 gap-6">
+        {/* KPI 1 - Items Detected */}
+        <div className="col-span-12 md:col-span-4 card bg-[#0d1410] border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.05)]">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-slate-400 text-sm font-medium mb-2">Items Detected</p>
+              <h2 className="text-4xl font-bold text-white">{recentScans.length > 0 ? 2847 + recentScans.length : 2847}</h2>
+              <p className="text-emerald-400 text-xs mt-2 font-medium">↑ 12% this month</p>
+            </div>
+            <div className="w-12 h-12 bg-emerald-500/20 rounded-lg flex items-center justify-center border border-emerald-500/30">
+              <Zap className="w-6 h-6 text-emerald-400" />
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="col-span-12 md:col-span-4 card bg-[#0d1410] border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.05)]">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-slate-400 text-sm font-medium mb-2">Carbon Saved (CO₂)</p>
-            <h2 className="text-4xl font-bold text-white">84 kg</h2>
-            <p className="text-emerald-400 text-xs mt-2 font-medium">↑ 8.4% reduction</p>
-          </div>
-          <div className="w-12 h-12 bg-emerald-500/20 rounded-lg flex items-center justify-center border border-emerald-500/30">
-            <span className="text-xl">🌱</span>
+        {/* KPI 2 - Carbon Saved */}
+        <div className="col-span-12 md:col-span-4 card bg-[#0d1410] border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.05)]">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-slate-400 text-sm font-medium mb-2">Carbon Saved (CO₂)</p>
+              <h2 className="text-4xl font-bold text-white">84 kg</h2>
+              <p className="text-emerald-400 text-xs mt-2 font-medium">↑ 8.4% reduction</p>
+            </div>
+            <div className="w-12 h-12 bg-emerald-500/20 rounded-lg flex items-center justify-center border border-emerald-500/30">
+              <span className="text-xl">🌱</span>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="col-span-12 md:col-span-4 card bg-[#0d1410] border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.05)]">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-slate-400 text-sm font-medium mb-2">Community Rank</p>
-            <h2 className="text-4xl font-bold text-white">#12</h2>
-            <p className="text-blue-400 text-xs mt-2 font-medium">↑ 3 positions</p>
-          </div>
-          <div className="w-12 h-12 bg-blue-500/20 rounded-lg flex items-center justify-center border border-blue-500/30">
-            <span className="text-xl">🏆</span>
+        {/* KPI 3 - Community Rank */}
+        <div className="col-span-12 md:col-span-4 card bg-[#0d1410] border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.05)]">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-slate-400 text-sm font-medium mb-2">Community Rank</p>
+              <h2 className="text-4xl font-bold text-white">#12</h2>
+              <p className="text-blue-400 text-xs mt-2 font-medium">↑ 3 positions</p>
+            </div>
+            <div className="w-12 h-12 bg-blue-500/20 rounded-lg flex items-center justify-center border border-blue-500/30">
+              <span className="text-xl">🏆</span>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Middle Left - Live Scanner */}
-      <div className="col-span-12 lg:col-span-8 card bg-[#0d1410] border-emerald-500/20 flex flex-col h-[500px]">
+        {/* Live Scanner */}
+        <div className="col-span-12 lg:col-span-8 card bg-[#0d1410] border-emerald-500/20 flex flex-col h-[500px]">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
             <Camera className="w-5 h-5 text-emerald-400" /> Live AI Detection Scanner
@@ -456,6 +512,7 @@ If it is a normal object or waste material, respond using EXACTLY these five sec
             </tbody>
           </table>
         </div>
+      </div>
       </div>
     </div>
   )
