@@ -1,5 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import Landing from './pages/Landing'
+import Login from './pages/Login'
+import SignUp from './pages/SignUp'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Heatmap from './pages/Heatmap'
@@ -13,14 +15,16 @@ function App() {
   return (
     <Router>
       <Routes>
-        {/* LANDING PAGE - Public facing */}
+        {/* PUBLIC PAGES - Full screen, no Layout */}
         <Route path="/" element={<Landing />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<SignUp />} />
         
         {/* TEST ROUTES - For debugging map issues */}
         <Route path="/map-test" element={<MapTest />} />
         <Route path="/map-alternative" element={<MapAlternative />} />
         
-        {/* MAIN APP ROUTES - Protected by Layout */}
+        {/* PROTECTED APP ROUTES - Wrapped with Layout & Sidebar */}
         <Route element={<Layout />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/heatmap" element={<Heatmap />} />

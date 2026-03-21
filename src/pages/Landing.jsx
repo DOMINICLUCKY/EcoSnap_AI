@@ -21,7 +21,7 @@ export default function Landing() {
           </div>
           <div className="flex items-center gap-4">
             <a href="#features" className="text-slate-300 hover:text-emerald-400 text-sm font-medium transition">Features</a>
-            <Link to="/dashboard" className="px-6 py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-semibold transition border border-emerald-500/30">
+            <Link to="/login" className="px-6 py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-semibold transition border border-emerald-500/30">
               Sign In
             </Link>
           </div>
@@ -58,7 +58,7 @@ export default function Landing() {
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
             {/* Primary CTA */}
             <Link
-              to="/dashboard"
+              to="/signup"
               className="group relative px-8 py-4 bg-emerald-500 hover:bg-emerald-600 text-black font-bold rounded-lg transition-all duration-300 flex items-center justify-center gap-2 shadow-[0_0_30px_rgba(16,185,129,0.4)] hover:shadow-[0_0_40px_rgba(16,185,129,0.6)]"
             >
               <Zap className="w-5 h-5" />
@@ -67,9 +67,9 @@ export default function Landing() {
             </Link>
 
             {/* Secondary CTA */}
-            <button className="px-8 py-4 bg-slate-900/50 hover:bg-slate-900/80 text-white font-bold rounded-lg transition-all duration-300 border border-slate-700/30 hover:border-emerald-500/30">
-              Create Account
-            </button>
+            <Link to="/login" className="px-8 py-4 bg-slate-900/50 hover:bg-slate-900/80 text-white font-bold rounded-lg transition-all duration-300 border border-slate-700/30 hover:border-emerald-500/30">
+              Sign In
+            </Link>
           </div>
 
           {/* Scroll Indicator */}
