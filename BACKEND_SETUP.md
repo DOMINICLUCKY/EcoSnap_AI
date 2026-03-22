@@ -41,7 +41,7 @@ PORT=5000
 
 ### Example:
 ```
-MONGODB_URI=mongodb+srv://adarshmund07_db_user:MySecurePassword123@ecosnap.0cte9yh.mongodb.net/ecosnap?retryWrites=true&w=majority
+MONGODB_URI=mongodb+srv://adarshmund07_db_user:<YOUR_PASSWORD>@ecosnap.0cte9yh.mongodb.net/ecosnap?retryWrites=true&w=majority
 PORT=5000
 ```
 
