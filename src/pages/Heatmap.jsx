@@ -5,7 +5,7 @@ import { AlertTriangle, Factory, Wind, CheckCircle, Activity, Radio, MapPin } fr
 const ZONE_DATA = [
   { id: 1, name: "Bhubaneswar Tech Hub", lat: 20.2961, lng: 85.8245, type: 'warning', co2: '45 ppm', waste: 'Moderate', status: 'Elevated Waste', color: '#eab308' },
   { id: 2, name: "Industrial Zone Alpha", lat: 20.2500, lng: 85.8000, type: 'danger', co2: '89 ppm', waste: 'Critical', status: 'Toxic Dumping', color: '#ef4444' },
-  { id: 3, name: "Jaipatna District", lat: 19.4812, lng: 82.8200, type: 'safe', co2: '12 ppm', waste: 'Low', status: 'Optimal Recycling', color: '#10b981' },
+  { id: 3, name: "Jaipatna City", lat: 19.4812, lng: 82.8200, type: 'safe', co2: '12 ppm', waste: 'Low', status: 'Optimal Recycling', color: '#10b981' },
   { id: 4, name: "EcoSnap Facility 01", lat: 20.3200, lng: 85.8100, type: 'safe', co2: '8 ppm', waste: 'Minimal', status: 'Active Processing', color: '#10b981' },
   { id: 5, name: "Cuttack Market Sector", lat: 20.4625, lng: 85.8830, type: 'warning', co2: '55 ppm', waste: 'High', status: 'High E-Waste', color: '#eab308' },
 ]

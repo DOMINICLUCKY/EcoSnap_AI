@@ -197,28 +197,24 @@ export default function Dashboard() {
       const base64Data = imageSrc.split(',')[1]
       const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' }, { apiVersion: 'v1' })
       
-      // THE DUAL-PATHWAY PROMPT WITH NUMBERED LISTS
+      // UPDATED PROMPT: Just name the pathways, ask user to choose
       const prompt = `Analyze this exact image. 
 If the image is predominantly of a person, human, face, or body part, respond ONLY with this exact text: 
 "⚠️ **TARGET IDENTIFIED:** Human.\n\nEcoSnap is designed for waste management and environmental sustainability. Please scan a recyclable item or piece of waste to continue!"
 
-If it is a normal object or waste material, respond using EXACTLY these five sections with these EXACT bold headers and formatting. Do not use markdown hash (#) symbols. Keep it engaging, scientific, and highly detailed.
+If it is a normal object or waste material, respond with EXACTLY these five sections. Do not use markdown hash (#) symbols. Keep it engaging, scientific, and highly detailed.
 
 **🔍 MATERIAL IDENTIFIED:** Name the exact object and its scientific core material (e.g., Polyethylene Terephthalate (PET), Corrugated Cardboard).
 
 **⚠️ ECOLOGICAL FOOTPRINT:** Explain exactly how long this takes to decompose in nature and what toxins or microplastics it releases.
 
-**♻️ PATHWAY A - INDUSTRIAL RECYCLING:**
-1. [First step on how to prep the item]
-2. [Second step on the recycling process]
-3. [Third step: What new industrial products it becomes]
+**♻️ PATHWAY A - INDUSTRIAL RECYCLING:** [Briefly name the commercial recycling method, e.g., 'Curbside Plastics Bin'].
 
-**💡 PATHWAY B - AT-HOME UPCYCLING:**
-1. [First step to prepare materials]
-2. [Second step: Building the creative project]
-3. [Third step: Final assembly or finishing touches]
+**💡 PATHWAY B - AT-HOME UPCYCLING:** [Briefly name a creative DIY project, e.g., 'Self-Watering Planter'].
 
-**📊 ECO-METRIC:** Provide one quick, interesting statistical fact about recycling this specific material.`
+**📊 ECO-METRIC:** Provide one quick, interesting statistical fact about recycling this specific material.
+
+End your response by asking: 'Which pathway would you like the step-by-step guide for? Choose A or B!'`
       
       const result = await model.generateContent([
         prompt,
@@ -241,9 +237,37 @@ If it is a normal object or waste material, respond using EXACTLY these five sec
     } catch (error) {
       console.error('🚨 SCAN ERROR:', error)
       const detectedItem = detections.length > 0 ? detections[0].class : 'item'
-      const fallbackUpcycleIdea = `**🔍 MATERIAL IDENTIFIED:** ${detectedItem}\n\n**⚠️ ECOLOGICAL FOOTPRINT:** Improper disposal leads to massive landfill accumulation.\n\n**♻️ PATHWAY A:** Please sort into local municipal recycling.\n\n**💡 PATHWAY B:** Repurpose this item for household storage.`
       
-      setChatMessages(prev => [...prev, { id: Date.now() + 1, type: 'bot', text: fallbackUpcycleIdea }])
+      // TRY DATABASE FALLBACK
+      try {
+        const dbResponse = await fetch(`http://localhost:5000/api/items/search?q=${encodeURIComponent(detectedItem)}`)
+        if (dbResponse.status === 200) {
+          const dbData = await dbResponse.json()
+          if (dbData.success && dbData.data) {
+            const item = dbData.data
+            const fallbackMessage = `🔍 MATERIAL IDENTIFIED: ${item.ItemName} - ${item.Material}
+
+⚠️ ECOLOGICAL FOOTPRINT: ${item.EcologicalFootprint}
+
+♻️ PATHWAY A - INDUSTRIAL RECYCLING: ${item.PathwayA}
+
+💡 PATHWAY B - AT-HOME UPCYCLING: ${item.PathwayB}
+
+📊 ECO-METRIC: ${item.EcoMetric}
+
+Which pathway would you like to explore? Choose A or B!`
+            setChatMessages(prev => [...prev, { id: Date.now() + 1, type: 'bot', text: fallbackMessage }])
+          } else {
+            throw new Error('No database match')
+          }
+        } else {
+          throw new Error('Database not found')
+        }
+      } catch (dbError) {
+        console.log('Database fallback also failed, using generic message:', dbError)
+        const genericFallback = `Scan successful, but offline database could not identify the specific material properties of this ${detectedItem}. Please try again or select a clear recycling item.`
+        setChatMessages(prev => [...prev, { id: Date.now() + 1, type: 'bot', text: genericFallback }])
+      }
     } finally {
       setIsScanning(false)
       setIsTyping(false)
@@ -251,30 +275,30 @@ If it is a normal object or waste material, respond using EXACTLY these five sec
   }, [detections, genAI])
 
   // --- 5. HANDLE STANDARD TEXT CHAT ---
-  const handleSendMessage = async () => {
-    if (!inputValue.trim()) return
+  const handleSendMessage = async (customMessage = null) => {
+    const messageToSend = customMessage || inputValue
+    if (!messageToSend.trim()) return
 
-    const currentInput = inputValue
-    setChatMessages(prev => [...prev, { id: Date.now(), type: 'user', text: currentInput }])
-    setInputValue('')
+    setChatMessages(prev => [...prev, { id: Date.now(), type: 'user', text: messageToSend }])
+    if (!customMessage) setInputValue('')
     setIsTyping(true)
 
     try {
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY
       if (!apiKey || apiKey === 'undefined') throw new Error("API Key missing.")
 
-      // CONTEXT-AWARE: Include current detection in prompt
       const currentDetection = detections.length > 0 ? detections[0].class : 'an object'
       const contextNote = detections.length > 0 ? `The user is currently looking at: ${currentDetection}. ` : ''
 
       const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' }, { apiVersion: 'v1' })
-      const prompt = `You are EcoSnap, an advanced Environmental Intelligence AI. ${contextNote}The user says: "${currentInput}". Respond directly using these exact bold headers:
+      
+      // SMART CHAT LOGIC FOR PATHWAY SELECTION
+      const prompt = `Context: The user just scanned or is discussing: "${currentDetection}".
+The user says: "${messageToSend}".
 
-**🔍 MATERIAL ANALYSIS:** Identify the core material (if the user is looking at something specific, analyze that).
-**⚠️ ECOLOGICAL FOOTPRINT:** What happens if it's trashed improperly?
-**♻️ PATHWAY A - INDUSTRIAL RECYCLING:** Commercial recycling protocol with numbered steps.
-**💡 PATHWAY B - AT-HOME UPCYCLING:** A practical at-home reuse idea with numbered steps.
-**📊 ECO-METRIC:** One quick statistical fact about this material.`
+If the user is asking for "Pathway A" or "Option A", provide a highly detailed, 4-step numbered tutorial on exactly how to prepare this specific item for industrial recycling.
+If the user is asking for "Pathway B" or "Option B", provide a highly detailed, 4-step numbered tutorial on how to build the DIY upcycling project you suggested for this item.
+If they ask a general question, answer it normally. Format cleanly with emojis, but DO NOT use markdown hash (#) symbols.`
       
       const result = await model.generateContent(prompt)
       let aiText = await result.response.text()
@@ -447,6 +471,23 @@ If it is a normal object or waste material, respond using EXACTLY these five sec
               </div>
             </div>
           )}
+        </div>
+
+        <div className="flex gap-2 mb-3">
+          <button
+            onClick={() => handleSendMessage('Give me the steps for Pathway A')}
+            disabled={isTyping}
+            className="flex-1 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-50 rounded-full px-3 py-1 text-xs font-medium transition-all"
+          >
+            ♻️ Pathway A
+          </button>
+          <button
+            onClick={() => handleSendMessage('Give me the steps for Pathway B')}
+            disabled={isTyping}
+            className="flex-1 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-50 rounded-full px-3 py-1 text-xs font-medium transition-all"
+          >
+            💡 Pathway B
+          </button>
         </div>
 
         <div className="flex gap-2">

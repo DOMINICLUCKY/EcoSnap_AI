@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Mail, Lock, ArrowRight, AlertCircle, Loader } from 'lucide-react'
-import { useGoogleLogin } from '@react-oauth/google'
+import { Mail, Lock, ArrowRight, AlertCircle } from 'lucide-react'
+import { GoogleLogin } from '@react-oauth/google'
 import axios from 'axios'
 
 export default function Login() {
@@ -9,7 +9,6 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [isGoogleLoading, setIsGoogleLoading] = useState(false)
   const [error, setError] = useState('')
 
   // ============================================
@@ -48,37 +47,19 @@ export default function Login() {
   // GOOGLE OAUTH LOGIN
   // ============================================
   const handleGoogleSuccess = async (credentialResponse) => {
-    setError('')
-    setIsGoogleLoading(true)
-
     try {
+      setError('')
       const response = await axios.post('http://localhost:5000/api/auth/google', {
         tokenId: credentialResponse.credential
       })
 
-      if (response.data.success && response.data.token) {
-        // Save token to localStorage
-        localStorage.setItem('eco_token', response.data.token)
-        localStorage.setItem('eco_user', JSON.stringify(response.data.user))
-        
-        // Redirect to dashboard
-        setTimeout(() => {
-          navigate('/dashboard')
-        }, 300)
-      }
+      localStorage.setItem('eco_token', response.data.token)
+      localStorage.setItem('eco_user', JSON.stringify(response.data.user))
+      navigate('/dashboard')
     } catch (err) {
-      const errorMessage = err.response?.data?.message || err.message || 'Google login failed'
-      setError(errorMessage)
-    } finally {
-      setIsGoogleLoading(false)
+      setError(err.response?.data?.message || 'Google Auth failed on server')
     }
   }
-
-  const googleLogin = useGoogleLogin({
-    onSuccess: handleGoogleSuccess,
-    onError: () => setError('Google login failed. Please try again.')
-  })
-
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-6 relative overflow-hidden">
       {/* Blurred Glowing Orb Background */}
@@ -164,21 +145,16 @@ export default function Login() {
           </div>
 
           {/* Google Button */}
-          <button
-            onClick={() => googleLogin()}
-            type="button"
-            disabled={isGoogleLoading}
-            className="w-full bg-slate-900/50 hover:bg-slate-900/80 disabled:opacity-50 disabled:cursor-not-allowed border border-slate-700/30 hover:border-emerald-500/30 text-white font-semibold py-3 rounded-lg transition-all duration-300 flex items-center justify-center gap-2"
-          >
-            {isGoogleLoading ? (
-              <>
-                <Loader className="w-5 h-5 animate-spin" />
-                Signing in...
-              </>
-            ) : (
-              'Continue with Google'
-            )}
-          </button>
+          <div className="flex justify-center mt-4">
+            <GoogleLogin
+              onSuccess={handleGoogleSuccess}
+              onError={() => setError('Google Login Failed')}
+              theme="filled_black"
+              shape="rectangular"
+              text="continue_with"
+              size="large"
+            />
+          </div>
 
           {/* Footer Link */}
           <p className="text-center text-slate-400 text-sm mt-8">

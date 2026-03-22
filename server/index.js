@@ -2,6 +2,9 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const authRoutes = require('./routes/authRoutes');
+const itemRoutes = require('./routes/itemRoutes');
+const User = require('./models/User');
 
 const app = express();
 
@@ -80,43 +83,15 @@ const ScanSchema = new mongoose.Schema({
   }
 });
 
-// User Schema: Represents leaderboard users
-const UserSchema = new mongoose.Schema({
-  username: {
-    type: String,
-    required: true,
-    unique: true,
-    trim: true
-  },
-  email: {
-    type: String,
-    default: null
-  },
-  carbonSaved: {
-    type: Number,
-    default: 0
-  },
-  scans: {
-    type: Number,
-    default: 0
-  },
-  location: {
-    type: String,
-    default: 'Unknown'
-  },
-  joinedAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  }
-});
-
-// Create models from schemas
+// Create Scan model
 const Scan = mongoose.model('Scan', ScanSchema);
-const User = mongoose.model('User', UserSchema);
+// User model imported from models/User.js
+
+// ============================================
+// AUTHENTICATION ROUTES
+// ============================================
+app.use('/api/auth', authRoutes);
+app.use('/api/items', itemRoutes);
 
 // ============================================
 // API ROUTES
@@ -539,6 +514,13 @@ app.listen(PORT, () => {
   console.log(`📍 Health check: http://localhost:${PORT}/health`);
   console.log(`📊 API Base: http://localhost:${PORT}/api`);
   console.log(`\n🔗 Available Endpoints:`);
+  console.log(`\n   🔐 AUTHENTICATION ROUTES:`);
+  console.log(`   POST   /api/auth/register                (Local signup)`);
+  console.log(`   POST   /api/auth/login                   (Local login)`);
+  console.log(`   POST   /api/auth/google                  (Google OAuth)`);
+  console.log(`   GET    /api/auth/verify-email/:token     (Email verification)`);
+  console.log(`   GET    /api/auth/me                      (Current user - protected)`);
+  console.log(`\n   📊 SCAN & LEADERBOARD ROUTES:`);
   console.log(`   GET    /api/scans`);
   console.log(`   POST   /api/scans`);
   console.log(`   GET    /api/scans/user/:username          (User scan history)`);
@@ -550,7 +532,7 @@ app.listen(PORT, () => {
   console.log(`   GET    /api/stats/user/:username          (User detailed stats)`);
   console.log(`   GET    /api/heatmap                       (Location-based scans)`);
   console.log(`   GET    /api/analytics/daily               (Daily statistics)`);
-  console.log(`   GET    /api/top-items                     (Most detected items)`);
+  console.log(`   GET    /api/top-items                     (Most detected items)\n`);
 });
 
 // ============================================
